@@ -1,0 +1,327 @@
+# Guía de Instalación y Desarrollo del Demo 
+Aarón Jesús Contreras Alvarado
+
+## Requerimientos Previos
+- Node.js (versión 12 o superior)
+- NPM (Node Package Manager)
+- Una cuenta de MongoDB Atlas y una base de datos creada
+
+## Pasos para la Instalación
+
+1. Instalar Node.js y NPM
+   - Descarga e instala Node.js desde la página oficial: https://nodejs.org/
+   - Verifica la instalación abriendo una terminal y ejecutando:
+     bash
+     node -v
+     npm -v
+     
+
+2. Configurar la Base de Datos en MongoDB Atlas
+   - Crea una cuenta en MongoDB Atlas: https://www.mongodb.com/cloud/atlas
+   - Crea un nuevo clúster y una base de datos.
+   - Añade un usuario con permisos de lectura y escritura.
+   - Obtén el URI de conexión a la base de datos. Este URI tendrá un formato similar a:
+     mongodb+srv://<username>:<password>@<cluster-url>/myFirstDatabase?retryWrites=true&w=majority
+
+
+3. Visual Studio Code
+   - Navega al directorio del proyecto en la terminal.
+   
+
+
+4. Instalar Dependencias
+   - Ejecuta el siguiente comando en la terminal para instalar las dependencias necesarias:
+     npm install fastify mercurius mongoose graphql
+     
+
+5. Configurar el Archivo de Conexión**
+   Debes de crear el archivo index.js y asignarle el código que se verá a continuación 
+
+6. Código del Servidor
+   - Asegúrate de que el archivo `index.js` contenga el siguiente código:
+
+
+index.js:
+
+const Fastify = require('fastify');
+const Mercurius = require('mercurius');
+const mongoose = require('mongoose');
+const { GraphQLSchema, GraphQLObjectType, GraphQLString, GraphQLInt, GraphQLID, GraphQLList } = require('graphql');
+
+// URI de conexión a MongoDB Atlas
+const uri = "mongodb+srv://AaronC20:aaronCR14@base.lz84jow.mongodb.net/?retryWrites=true&w=majority&appName=Base";
+
+// Conectar a MongoDB Atlas
+async function connectToMongoDB() {
+  try {
+    await mongoose.connect(uri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverApi: { version: '1', strict: true, deprecationErrors: true }
+    });
+    console.log("Conexión exitosa a MongoDB Atlas");
+  } catch (error) {
+    console.error("Error al conectar a MongoDB Atlas", error);
+  }
+}
+
+// Definición del esquema de MongoDB
+const Schema = mongoose.Schema;
+const userSchema = new Schema({
+  name: String,
+  age: Number,
+  email: String
+});
+const User = mongoose.model('User', userSchema);
+
+// Definición del esquema GraphQL
+const UserType = new GraphQLObjectType({
+  name: 'User',
+  fields: {
+    id: { type: GraphQLID },
+    name: { type: GraphQLString },
+    age: { type: GraphQLInt },
+    email: { type: GraphQLString }
+  }
+});
+
+const AgeCountType = new GraphQLObjectType({
+  name: 'AgeCount',
+  fields: {
+    age: { type: GraphQLInt },
+    count: { type: GraphQLInt }
+  }
+});
+
+const RootQuery = new GraphQLObjectType({
+  name: 'RootQueryType',
+  fields: {
+    users: {
+      type: new GraphQLList(UserType),
+      resolve: () => User.find()
+    },
+    user: {
+      type: UserType,
+      args: { id: { type: GraphQLID } },
+      resolve: (_, { id }) => User.findById(id)
+    },
+    totalUsers: {
+      type: GraphQLInt,
+      resolve: () => User.countDocuments()
+    },
+    usersByAge: {
+      type: new GraphQLList(AgeCountType),
+      resolve: async () => {
+        try {
+          const result = await User.aggregate([
+            {
+              $group: {
+                _id: "$age",
+                count: { $sum: 1 }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                age: "$_id",
+                count: 1
+              }
+            }
+          ]);
+          return result;
+        } catch (error) {
+          console.error("Aggregation error:", error);
+          return [];
+        }
+      }
+    }
+  }
+});
+
+const Function = new GraphQLObjectType({
+  name: 'Function',
+  fields: {
+    addUser: {
+      type: UserType,
+      args: {
+        name: { type: GraphQLString },
+        age: { type: GraphQLInt },
+        email: { type: GraphQLString }
+      },
+      resolve: (_, { name, age, email }) => {
+        const user = new User({ name, age, email });
+        return user.save();
+      }
+    },
+    updateUser: {
+      type: UserType,
+      args: {
+        id: { type: GraphQLID },
+        name: { type: GraphQLString },
+        age: { type: GraphQLInt },
+        email: { type: GraphQLString }
+      },
+      resolve: async (_, { id, name, age, email }) => {
+        try {
+          const updatedUser = await User.findByIdAndUpdate(
+            id,
+            { name, age, email },
+            { new: true }
+          );
+          return updatedUser;
+        } catch (error) {
+          console.error("Error updating user:", error);
+          return null;
+        }
+      }
+    },
+    deleteUser: {
+      type: UserType,
+      args: { id: { type: GraphQLID } },
+      resolve: async (_, { id }) => {
+        try {
+          const deletedUser = await User.findByIdAndDelete(id);
+          return deletedUser;
+        } catch (error) {
+          console.error("Error deleting user:", error);
+          return null;
+        }
+      }
+    }
+  }
+});
+
+const schema = new GraphQLSchema({
+  query: RootQuery,
+  mutation: Function
+});
+
+// Configuración del servidor Fastify con Mercurius
+const fastify = Fastify();
+fastify.register(Mercurius, {
+  schema,
+  graphiql: true // Habilita GraphiQL en http://localhost:4020/graphiql
+});
+
+// Iniciar la conexión a MongoDB y el servidor Fastify
+connectToMongoDB().then(() => {
+  fastify.listen({ port: 4020, host: 'localhost' }, (err, address) => {
+    if (err) {
+      console.error(err);
+      process.exit(1);
+    }
+    console.log(`🚀 Server ready at http://localhost:4020/graphiql`);
+  });
+});
+
+
+
+
+
+
+7. Ejecutar el siguiente comando en la terminal: 
+
+   - node index.js
+
+
+
+
+
+
+Paso Final: Una vez el servidor esté listo, solo se debe de acceder a la url y realizar lo que dejaré a continuacín desde la interfaz de GraphiQL la cual hará los cambios en MongoDB Atlas:
+
+
+1. Insertar datos:
+
+mutation {
+  addUser(name: "John Doe", age: 30, email: "john@example.com") {
+    id
+    name
+    age
+    email
+  }
+}
+
+
+
+
+
+2. Modificar datos
+
+mutation {
+  updateUser(id: "ID_DEL_USUARIO", name: "Jane Doe", age: 25, email: "jane@example.com") {
+    id
+    name
+    age
+    email
+  }
+}
+
+
+
+
+3. Eliminar datos
+
+mutation {
+  deleteUser(id: "ID_DEL_USUARIO") {
+    id
+    name
+    age
+    email
+  }
+}
+
+
+
+
+4. Consultar los datos totales de una tabla
+
+query {
+  totalUsers
+}
+
+
+
+
+5. Consultar seleccionando campos específicos de una tabla 
+
+query {
+  users {
+    id
+    name
+  }
+}
+
+
+
+
+6. Consultar aplicando filtros sobre una tabla
+
+query {
+  user(id: "ID_DEL_USUARIO") {
+    id
+    name
+    email
+  }
+}
+
+
+
+
+7. Consultar aplicando agregaciones o joins entre tablas (Cantidad de usuarios por edad)
+
+query {
+  usersByAge {
+    age
+    count
+  }
+}
+
+
+
+
+
+
+Gracias.
+
+
